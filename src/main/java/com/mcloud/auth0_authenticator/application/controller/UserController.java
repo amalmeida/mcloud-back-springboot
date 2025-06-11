@@ -18,12 +18,14 @@ public class UserController {
 
     private final UserService userService;
 
-    @PostMapping("/sync/{userId}")
+
+    @PostMapping("/sync")
     @PreAuthorize("hasAuthority('write:users')")
-    public ResponseEntity<String> syncUser(@PathVariable String userId) {
+    public ResponseEntity<String> syncUser(@RequestParam String userId) {
         userService.syncUserFromAuth0(userId);
         return ResponseEntity.ok("Usuário sincronizado com sucesso");
     }
+
 
     @GetMapping
     @PreAuthorize("hasAuthority('read:users')")

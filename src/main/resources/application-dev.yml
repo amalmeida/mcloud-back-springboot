@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:postgresql://postgres:5432/auth0_authenticator
+    url: jdbc:postgresql://localhost:5432/auth0_authenticator
     username: mcloud_user
     password: admin@123
     driver-class-name: org.postgresql.Driver
@@ -30,7 +30,7 @@ server:
 
 auth0:
   namespace: https://api.mcloud.com
-
+  roles-claim: https://api.mcloud.com/roles  # New property for ROLES_CLAIM
   management:
     domain: dev-h6bjevho.us.auth0.com
     client-id: TqXccKgqvMK0vBBnCBU999gtESLAuuz5

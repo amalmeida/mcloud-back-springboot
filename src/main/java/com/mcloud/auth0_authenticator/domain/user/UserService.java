@@ -6,7 +6,6 @@ import com.auth0.exception.APIException;
 import com.auth0.exception.Auth0Exception;
 import com.auth0.json.mgmt.roles.Role;
 import com.auth0.json.mgmt.users.UsersPage;
-import com.mcloud.auth0_authenticator.domain.exception.ErrorCode;
 import com.mcloud.auth0_authenticator.domain.exception.UserNotFoundException;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +17,7 @@ import org.springframework.stereotype.Service;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Slf4j
 @Service
@@ -50,12 +50,10 @@ public class UserService {
                     .collect(Collectors.toList());
 
             userRepository.saveAll(domainAppUsers);
-
-            log.info("Sincronização de {} usuários do Auth0 concluída com sucesso", domainAppUsers.size());
+            log.info("Sincronizados {} usuários do Auth0 com sucesso", domainAppUsers.size());
 
         } catch (Auth0Exception e) {
-            log.error("Erro ao sincronizar todos os usuários do Auth0", e);
-            // opcional: lançar exceção monitorada ou notificação interna
+            log.error("Falha ao sincronizar todos os usuários do Auth0", e);
         }
 
         return CompletableFuture.completedFuture(null);
@@ -64,13 +62,15 @@ public class UserService {
     @Transactional
     public void syncUserFromAuth0(String userId) {
         if (userId == null || !userId.matches("^(auth0|google-oauth2)\\|.+")) {
-            throw new IllegalArgumentException("Invalid user ID format: " + userId);
+            log.error("Formato de ID de usuário inválido: {}", userId);
+            throw new IllegalArgumentException(messageSource.getMessage("error.invalid.user.id", new Object[]{userId}, Locale.getDefault()));
         }
         try {
             log.info("Sincronizando usuário com ID: {} do Auth0", userId);
             com.auth0.json.mgmt.users.User auth0User = managementAPI.users().get(userId, null).execute().getBody();
 
             if (auth0User == null) {
+                log.warn("Usuário não encontrado no Auth0: {}", userId);
                 throw new UserNotFoundException(userId);
             }
 
@@ -79,11 +79,11 @@ public class UserService {
             log.info("Usuário sincronizado com sucesso: {}", appUser.getEmail());
 
         } catch (Auth0Exception e) {
-            log.error("Erro ao sincronizar usuário do Auth0 com ID: {}", userId, e);
-            if (e instanceof APIException && ((APIException) e).getStatusCode() == 404) {
+            log.error("Falha ao sincronizar usuário do Auth0 com ID: {}", userId, e);
+            if (e instanceof APIException apiEx && apiEx.getStatusCode() == 404) {
                 throw new UserNotFoundException(userId);
             }
-            throw new RuntimeException(messageSource.getMessage(ErrorCode.AUTH0_UPDATE_FAILED.getMessageKey(), new Object[]{e.getMessage()}, Locale.getDefault()), e);
+            throw new RuntimeException(messageSource.getMessage("error.auth0.sync.failed", new Object[]{e.getMessage()}, Locale.getDefault()), e);
         }
     }
 
@@ -118,20 +118,21 @@ public class UserService {
                         .collect(Collectors.toList());
 
                 if (!roleIds.isEmpty()) {
+                    managementAPI.users().removeRoles(userId, managementAPI.users().listRoles(userId, null).execute().getBody().getItems().stream().map(Role::getId).collect(Collectors.toList())).execute();
                     managementAPI.users().addRoles(userId, roleIds).execute();
                 }
             }
 
             return appUser;
         } catch (Auth0Exception e) {
-            log.error("Erro ao atualizar usuário no Auth0 com ID: {}", userId, e);
-            throw new RuntimeException(messageSource.getMessage(ErrorCode.AUTH0_UPDATE_FAILED.getMessageKey(), null, Locale.getDefault()), e);
+            log.error("Falha ao atualizar usuário no Auth0 com ID: {}", userId, e);
+            throw new RuntimeException(messageSource.getMessage("error.auth0.update.failed", new Object[]{e.getMessage()}, Locale.getDefault()), e);
         }
     }
 
     private AppUser convertAuth0User(com.auth0.json.mgmt.users.User auth0User) {
         AppUser appUser = new AppUser();
-        appUser.setUserId(auth0User.getId());
+        appUser.setId(auth0User.getId());
         appUser.setEmail(auth0User.getEmail());
         appUser.setName(auth0User.getName());
 
@@ -140,7 +141,11 @@ public class UserService {
             Object details = auth0User.getAppMetadata().get("details");
 
             if (type != null) {
-                appUser.setType(UserType.valueOf(type.toString()));
+                try {
+                    appUser.setType(UserType.valueOf(type.toString()));
+                } catch (IllegalArgumentException e) {
+                    log.warn("Tipo de usuário inválido: {}", type);
+                }
             }
             if (details != null) {
                 appUser.setDetails(details.toString());
@@ -157,7 +162,8 @@ public class UserService {
                     .map(Role::getName)
                     .collect(Collectors.toList());
         } catch (Auth0Exception e) {
-            throw new RuntimeException(messageSource.getMessage(ErrorCode.AUTH0_ROLES_FAILED.getMessageKey(), null, Locale.getDefault()), e);
+            log.error("Falha ao listar papéis do Auth0", e);
+            throw new RuntimeException(messageSource.getMessage("error.auth0.roles.failed", new Object[]{e.getMessage()}, Locale.getDefault()), e);
         }
     }
 
@@ -167,17 +173,14 @@ public class UserService {
             Set<String> permissions = new HashSet<>();
 
             for (Role role : roles) {
-                try {
-                    var response = managementAPI.roles().listPermissions(role.getId(), null).execute();
-                    response.getBody().getItems().forEach(p -> permissions.add(p.getName()));
-                } catch (Auth0Exception e) {
-                    throw new RuntimeException("Erro ao buscar permissões do papel " + role.getName(), e);
-                }
+                managementAPI.roles().listPermissions(role.getId(), null).execute().getBody()
+                        .getItems().forEach(p -> permissions.add(p.getName()));
             }
 
             return new ArrayList<>(permissions);
         } catch (Auth0Exception e) {
-            throw new RuntimeException(messageSource.getMessage(ErrorCode.AUTH0_PERMISSIONS_FAILED.getMessageKey(), null, Locale.getDefault()), e);
+            log.error("Falha ao listar permissões do Auth0", e);
+            throw new RuntimeException(messageSource.getMessage("error.auth0.permissions.failed", new Object[]{e.getMessage()}, Locale.getDefault()), e);
         }
     }
 }

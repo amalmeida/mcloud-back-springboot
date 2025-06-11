@@ -5,22 +5,28 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class RoleConverter implements Converter<Jwt, Collection<GrantedAuthority>> {
+
+    private final String rolesClaim;
+
+    public RoleConverter(String rolesClaim) {
+        this.rolesClaim = rolesClaim;
+    }
+
     @Override
     public Collection<GrantedAuthority> convert(Jwt jwt) {
-        List<GrantedAuthority> authorities = new ArrayList<>();
-        List<String> roles = jwt.getClaimAsStringList("https://api.mcloud.com");
-        if (roles != null) {
-            roles.forEach(role -> authorities.add(new SimpleGrantedAuthority("ROLE_" + role)));
-        }
         List<String> permissions = jwt.getClaimAsStringList("permissions");
-        if (permissions != null) {
-            permissions.forEach(permission -> authorities.add(new SimpleGrantedAuthority(permission)));
-        }
-        return authorities;
+        List<String> roles = jwt.getClaimAsStringList(rolesClaim);
+
+        return Stream.concat(
+                        permissions != null ? permissions.stream() : Stream.empty(),
+                        roles != null ? roles.stream().map(role -> "ROLE_" + role) : Stream.empty()
+                ).map(SimpleGrantedAuthority::new)
+                .collect(Collectors.toList());
     }
 }

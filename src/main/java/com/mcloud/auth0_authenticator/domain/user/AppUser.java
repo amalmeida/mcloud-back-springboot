@@ -11,7 +11,7 @@ import java.util.List;
 @Data
 public class AppUser {
     @Id
-    private String userId;
+    private String id;
 
     private String email;
 

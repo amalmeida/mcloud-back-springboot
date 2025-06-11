@@ -1,8 +1,13 @@
 HELP.md
+
+# Build
 target/
+build/
+
+# Maven Wrapper
 .mvn/wrapper/maven-wrapper.jar
-!**/src/main/**/target/
-!**/src/test/**/target/
+mvnw
+mvnw.cmd
 
 ### STS ###
 .apt_generated
@@ -25,9 +30,18 @@ target/
 /dist/
 /nbdist/
 /.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
 
 ### VS Code ###
 .vscode/
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Arquivos temporários
+*~
+*.swp
+*.bak

@@ -1,13 +1,13 @@
 package com.mcloud.auth0_authenticator.domain.exception;
 
 public enum ErrorCode {
-    USER_NOT_FOUND("error.user.notfound"),
-    AUTH0_UPDATE_FAILED("error.auth0.update"),
-    AUTH0_ROLES_FAILED("error.auth0.roles"),
-    AUTH0_PERMISSIONS_FAILED("error.auth0.permissions"),
+    USER_NOT_FOUND("error.user.not.found"),
+    AUTH0_UPDATE_FAILED("error.auth0.update.failed"),
+    AUTH0_USER_NOT_FOUND("error.auth0.user.not.found"),
+    AUTH0_UNAUTHORIZED("error.auth0.unauthorized"),
     VALIDATION_ERROR("error.validation"),
-    GENERIC_ERROR("error.generic"),
-    INVALID_JSON("error.invalid.json");
+    INVALID_JSON("error.invalid.json"),
+    GENERIC_ERROR("error.generic");
 
     private final String messageKey;
 

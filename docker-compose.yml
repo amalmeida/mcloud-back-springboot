@@ -1,4 +1,3 @@
-
 services:
   postgres:
     image: postgres:16
@@ -21,7 +20,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - SPRING_PROFILES_ACTIVE=dev
+      - SPRING_PROFILES_ACTIVE=test
 
 volumes:
   postgres-data:

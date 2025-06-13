@@ -2,11 +2,8 @@ spring:
   datasource:
     url: jdbc:postgresql://postgres:5432/auth0_authenticator
     username: mcloud_user
-    password: sua_senha_secreta
+    password: admin@123
     driver-class-name: org.postgresql.Driver
-  jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: true
+
 
 

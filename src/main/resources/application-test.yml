@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/auth0_authenticator
+    url: jdbc:postgresql://postgres:5432/auth0_authenticator
     username: mcloud_user
     password: sua_senha_secreta
     driver-class-name: org.postgresql.Driver
@@ -8,3 +8,5 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: true
+
+

@@ -28,7 +28,7 @@ public class UserController {
 
 
     @GetMapping
-    @PreAuthorize("hasAuthority('read:users')")
+  //  @PreAuthorize("hasAuthority('read:users')")
     public ResponseEntity<List<AppUser>> listUsers() {
         return ResponseEntity.ok(userService.listUsers());
     }
@@ -43,6 +43,7 @@ public class UserController {
     @GetMapping("/roles")
     @PreAuthorize("hasAuthority('read:users')")
     public ResponseEntity<List<String>> listRoles() {
+
         return ResponseEntity.ok(userService.listRoles());
     }
 

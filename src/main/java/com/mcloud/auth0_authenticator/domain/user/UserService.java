@@ -34,6 +34,7 @@ public class UserService {
         if (appUsers.isEmpty()) {
             log.warn("Nenhum usuário encontrado localmente. Disparando sincronização com Auth0.");
             syncAllUsersFromAuth0Async();
+            appUsers = userRepository.findAll();
         }
 
         return appUsers;

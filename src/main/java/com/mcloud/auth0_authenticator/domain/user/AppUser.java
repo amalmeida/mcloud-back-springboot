@@ -1,5 +1,6 @@
 package com.mcloud.auth0_authenticator.domain.user;
 
+import com.mcloud.auth0_authenticator.domain.user.Address;
 import jakarta.persistence.*;
 import lombok.Data;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -31,4 +32,12 @@ public class AppUser {
     private List<String> permissions;
 
     private String passwordHash;
+
+    private String phone;
+
+    private String secondaryPhone;
+
+    @OneToOne(cascade = CascadeType.ALL, optional = true)
+    @JoinColumn(name = "address_id", referencedColumnName = "id")
+    private Address address;
 }

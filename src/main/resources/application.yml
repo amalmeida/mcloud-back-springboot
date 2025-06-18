@@ -5,6 +5,14 @@ spring:
     password: admin@123
     driver-class-name: org.postgresql.Driver
 
+  messages:
+    basename: messages
+    encoding: UTF-8
+
+  jackson:
+    serialization:
+      fail-on-empty-beans: false
+
   jpa:
     hibernate:
       ddl-auto: create
@@ -30,3 +38,12 @@ auth0:
   frontend:
     client-id: o9k5Uv8S5jvNENvsxxvP72p3ZFzg2vFy
     client-secret: TEV5VHt6yap0arw9JWTyDp9dOsqD3989PZlEAKgmfYfF8ofpjnHD31zBqPmwCxu3
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+  packages-to-scan: com.mcloud.auth0_authenticator
+  paths-to-match: /api/**

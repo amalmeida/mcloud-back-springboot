@@ -31,6 +31,7 @@ public class UserService {
     @Transactional(rollbackOn = Auth0Exception.class)
     public AppUser updateUser(String userId, UserUpdateDTO dto) {
         try {
+            log.warn("Entrando no método updateUser...");
             AppUser appUser = userRepository.findById(userId)
                     .orElseThrow(() -> new UserNotFoundException(userId));
 
@@ -72,6 +73,7 @@ public class UserService {
                     "complement", dto.getComplement() != null ? dto.getComplement() : ""
             ));
             auth0User.setAppMetadata(appMetadata);
+            log.warn("Atualizando usuário no AUHT0...");
 
             managementAPI.users().update(userId, auth0User).execute();
 
@@ -87,6 +89,7 @@ public class UserService {
                     managementAPI.users().addRoles(userId, roleIds).execute();
                 }
             }
+            log.warn("Usuários atualizados!!");
 
             return appUser;
         } catch (Auth0Exception e) {
@@ -129,13 +132,14 @@ public class UserService {
     }
 
     public List<AppUser> listUsers() {
-        List<AppUser> appUsers = userRepository.findAll();
+//        List<AppUser> appUsers = userRepository.findAll();
+        log.warn("Obtendo lista de usuários...");
 
-        if (appUsers.isEmpty()) {
-            log.warn("Nenhum usuário encontrado localmente. Disparando sincronização com Auth0.");
+  //      if (appUsers.isEmpty()) {
+  //          log.warn("Nenhum usuário encontrado localmente. Disparando sincronização com Auth0.");
             syncAllUsersFromAuth0Async().join();
-            appUsers = userRepository.findAll();
-        }
+            List<AppUser> appUsers = userRepository.findAll();
+   //     }
 
         return appUsers;
     }

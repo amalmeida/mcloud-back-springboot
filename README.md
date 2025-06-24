@@ -27,23 +27,10 @@ A aplicação valida esse token usando a configuração do issuer e audience, ga
 
 ## 📌 Principais Endpoints
 
-A seguir, os principais endpoints expostos pela API de autenticação:
+Documentação Swagger com os principais endpoints expostos pela API de autenticação:
 
-### `GET /appUsers`
-Lista todos os usuários registrados.
-
-### `POST /appUsers`
-Cria um novo usuário no sistema.
-
-### `GET /appUsers/{id}`
-Busca os dados de um usuário específico.
-
-### `DELETE /appUsers/{id}`
-Remove um usuário do sistema.
-
-### `GET /me`
-Retorna os dados do usuário autenticado (requer token válido).
-
+### `Swagger`
+http://localhost:8080/swagger-ui/index.html
 ---
 
 ## 🧪 Como Executar Localmente com Docker

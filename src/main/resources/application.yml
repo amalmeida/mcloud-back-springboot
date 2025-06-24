@@ -45,5 +45,7 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
     enabled: true
+    config-url: /api-docs/swagger-config
+    url: /api-docs
   packages-to-scan: com.mcloud.auth0_authenticator
   paths-to-match: /api/**

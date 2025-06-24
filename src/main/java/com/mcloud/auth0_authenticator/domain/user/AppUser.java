@@ -1,6 +1,5 @@
 package com.mcloud.auth0_authenticator.domain.user;
 
-import com.mcloud.auth0_authenticator.domain.user.Address;
 import jakarta.persistence.*;
 import lombok.Data;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -23,7 +22,7 @@ public class AppUser {
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
-    private String details;
+    private UserDetails details;
 
     @ElementCollection
     private List<String> roles;
@@ -36,6 +35,10 @@ public class AppUser {
     private String phone;
 
     private String secondaryPhone;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, columnDefinition = "varchar(255) default 'ATIVO'")
+    private UserStatus status = UserStatus.ATIVO;
 
     @OneToOne(cascade = CascadeType.ALL, optional = true)
     @JoinColumn(name = "address_id", referencedColumnName = "id")

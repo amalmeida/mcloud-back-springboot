@@ -329,7 +329,7 @@ public class UserService {
     }
 
     @Async
-    @Scheduled(fixedRate = 30 * 60 * 1000) // 30 minutos em milissegundos
+    @Scheduled(fixedRate = 5 * 60 * 1000) // 30 minutos em milissegundos - 5min para testes
     public CompletableFuture<Void> syncAllUsersFromAuth0Async() {
         try {
             log.info("Iniciando sincronização periódica com o Auth0");

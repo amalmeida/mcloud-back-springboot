@@ -1,8 +1,15 @@
 HELP.md
 
+# Variáveis de ambiente
+.env
+.ENV
+
 # Build
 target/
 build/
+
+# Deploy automático
+deploy.sh
 
 # Maven Wrapper
 .mvn/wrapper/maven-wrapper.jar

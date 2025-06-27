@@ -5,6 +5,11 @@ spring:
     password: admin@123
     driver-class-name: org.postgresql.Driver
 
+  task:
+    scheduling:
+      pool:
+        size: 10
+
   messages:
     basename: messages
     encoding: UTF-8

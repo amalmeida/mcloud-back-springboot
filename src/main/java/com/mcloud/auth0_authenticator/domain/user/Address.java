@@ -1,12 +1,14 @@
 package com.mcloud.auth0_authenticator.domain.user;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
-import com.mcloud.auth0_authenticator.domain.user.AppUser;
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
 @Entity
-@Data
+@Table(name = "address")
+@Getter
+@Setter
 public class Address {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -29,4 +31,19 @@ public class Address {
     @OneToOne(mappedBy = "address")
     @JsonBackReference
     private AppUser user;
+
+    @Override
+    public String toString() {
+        return "Address{" +
+                "id=" + id +
+                ", zipCode='" + zipCode + '\'' +
+                ", state='" + state + '\'' +
+                ", city='" + city + '\'' +
+                ", neighborhood='" + neighborhood + '\'' +
+                ", street='" + street + '\'' +
+                ", number='" + number + '\'' +
+                ", complement='" + complement + '\'' +
+                ", userId=" + (user != null ? user.getId() : null) +
+                '}';
+    }
 }

@@ -9,12 +9,14 @@ import com.auth0.json.mgmt.roles.Role;
 import com.auth0.json.mgmt.users.UsersPage;
 import com.auth0.json.mgmt.permissions.Permission;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mcloud.auth0_authenticator.domain.exception.GoogleOAuth2UpdateNotAllowedException;
 import com.mcloud.auth0_authenticator.domain.exception.UserNotFoundException;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -30,14 +32,29 @@ public class UserService {
     private final MessageSource messageSource;
     private final ObjectMapper objectMapper;
 
-    @Transactional(rollbackOn = Auth0Exception.class)
+    @Transactional(rollbackOn = Exception.class)
     public AppUser updateUser(String userId, UserUpdateDTO dto) {
         try {
             AppUser appUser = userRepository.findById(userId)
                     .orElseThrow(() -> new UserNotFoundException(userId));
 
-            appUser.setName(dto.getName());
-            appUser.setEmail(dto.getEmail());
+            // Verificar se é um usuário do Google OAuth2 e se name ou email estão sendo realmente alterados
+            boolean isGoogleUser = userId.startsWith("google-oauth2|");
+            if (isGoogleUser) {
+                boolean isNameChanged = dto.getName() != null && !dto.getName().equals(appUser.getName());
+                boolean isEmailChanged = dto.getEmail() != null && !dto.getEmail().equals(appUser.getEmail());
+                if (isNameChanged || isEmailChanged) {
+                    throw new GoogleOAuth2UpdateNotAllowedException(userId);
+                }
+            }
+
+            // Atualizar campos locais (banco de dados)
+            if (dto.getName() != null) {
+                appUser.setName(dto.getName());
+            }
+            if (dto.getEmail() != null) {
+                appUser.setEmail(dto.getEmail());
+            }
             if (dto.getType() != null) {
                 appUser.setType(dto.getType());
             }
@@ -60,6 +77,7 @@ public class UserService {
                 appUser.setStatus(dto.getStatus());
             }
 
+            // Atualizar endereço
             Address address = appUser.getAddress() != null ? appUser.getAddress() : new Address();
             boolean hasAddressData = false;
             if (dto.getZipCode() != null && !dto.getZipCode().isBlank()) {
@@ -101,11 +119,21 @@ public class UserService {
             log.info("Salvando AppUser com endereço: {}", appUser.getAddress());
             userRepository.save(appUser);
 
+            // Atualizar no Auth0
             User auth0User = new User();
-            auth0User.setName(dto.getName());
-            auth0User.setEmail(dto.getEmail());
-
             Map<String, Object> appMetadata = new HashMap<>();
+
+            // Apenas incluir name e email no auth0User se não for usuário Google OAuth2
+            if (!isGoogleUser) {
+                if (dto.getName() != null) {
+                    auth0User.setName(dto.getName());
+                }
+                if (dto.getEmail() != null) {
+                    auth0User.setEmail(dto.getEmail());
+                }
+            }
+
+            // Adicionar metadados
             if (dto.getType() != null) {
                 appMetadata.put("type", dto.getType().getCode());
             }
@@ -135,8 +163,10 @@ public class UserService {
 
             auth0User.setAppMetadata(appMetadata);
 
+            // Atualizar usuário no Auth0
             managementAPI.users().update(userId, auth0User).execute();
 
+            // Atualizar roles no Auth0
             if (dto.getRoles() != null && !dto.getRoles().isEmpty()) {
                 List<Role> allRoles = managementAPI.roles().list(new RolesFilter()).execute().getBody().getItems();
                 List<String> roleIds = allRoles.stream()
@@ -150,11 +180,31 @@ public class UserService {
                 }
             }
 
+            // Sincronizar usuário com o banco local após atualização no Auth0
+            syncUserFromAuth0(userId);
+
             return appUser;
         } catch (Auth0Exception e) {
             log.error("Falha ao atualizar usuário no Auth0 com ID: {}", userId, e);
             throw new RuntimeException("Erro ao atualizar usuário no Auth0: " + e.getMessage(), e);
         }
+    }
+
+    @Transactional
+    public AppUser getUserById(String userId) {
+        Optional<AppUser> appUserOptional = userRepository.findById(userId);
+        if (appUserOptional.isPresent()) {
+            log.info("Usuário com ID {} encontrado no banco local", userId);
+            return appUserOptional.get();
+        }
+
+        // Se não encontrado localmente, sincronizar com o Auth0
+        log.info("Usuário com ID {} não encontrado no banco local, sincronizando com o Auth0", userId);
+        syncUserFromAuth0(userId);
+
+        // Tentar buscar novamente após sincronização
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
     }
 
     @Transactional
@@ -269,31 +319,20 @@ public class UserService {
 
     public List<AppUser> listUsers() {
         try {
-            // Buscar usuários do Auth0
-            UsersPage page = managementAPI.users().list(null).execute().getBody();
-            List<com.auth0.json.mgmt.users.User> auth0Users = page.getItems();
-            long auth0UserCount = auth0Users.size();
-            long localUserCount = userRepository.count();
-
-            // Comparar contagem de usuários
-            if (auth0UserCount != localUserCount) {
-                log.info("Diferença detectada: {} usuários no Auth0, {} no banco local. Sincronizando...", auth0UserCount, localUserCount);
-                syncAllUsersFromAuth0Async().join();
-            }
-
-            // Retornar lista do banco local
             List<AppUser> appUsers = userRepository.findAll();
             log.info("Listando {} usuários do banco local", appUsers.size());
             return appUsers;
-        } catch (Auth0Exception e) {
-            log.error("Falha ao listar usuários do Auth0", e);
-            throw new RuntimeException("Erro ao listar usuários do Auth0: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("Falha ao listar usuários do banco local", e);
+            throw new RuntimeException("Erro ao listar usuários do banco local: " + e.getMessage(), e);
         }
     }
 
     @Async
+    @Scheduled(fixedRate = 30 * 60 * 1000) // 30 minutos em milissegundos
     public CompletableFuture<Void> syncAllUsersFromAuth0Async() {
         try {
+            log.info("Iniciando sincronização periódica com o Auth0");
             UsersPage page = managementAPI.users().list(null).execute().getBody();
             List<com.auth0.json.mgmt.users.User> auth0Users = page.getItems();
 
@@ -301,8 +340,25 @@ public class UserService {
                     .map(this::convertAuth0User)
                     .collect(Collectors.toList());
 
-            userRepository.saveAll(domainAppUsers);
-            log.info("Sincronizados {} usuários do Auth0 com sucesso", domainAppUsers.size());
+            // Atualizar apenas os usuários que mudaram ou são novos
+            List<AppUser> existingUsers = userRepository.findAll();
+            Map<String, AppUser> existingUsersMap = existingUsers.stream()
+                    .collect(Collectors.toMap(AppUser::getId, user -> user));
+
+            List<AppUser> usersToSave = new ArrayList<>();
+            for (AppUser auth0User : domainAppUsers) {
+                AppUser existingUser = existingUsersMap.get(auth0User.getId());
+                if (existingUser == null || !existingUser.equals(auth0User)) {
+                    usersToSave.add(auth0User);
+                }
+            }
+
+            if (!usersToSave.isEmpty()) {
+                userRepository.saveAll(usersToSave);
+                log.info("Sincronizados {} usuários do Auth0 com sucesso", usersToSave.size());
+            } else {
+                log.info("Nenhum usuário novo ou alterado para sincronizar do Auth0");
+            }
 
         } catch (Auth0Exception e) {
             log.error("Falha ao sincronizar todos os usuários do Auth0", e);

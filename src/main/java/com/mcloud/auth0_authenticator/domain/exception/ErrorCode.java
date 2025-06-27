@@ -7,7 +7,8 @@ public enum ErrorCode {
     AUTH0_UNAUTHORIZED("error.auth0.unauthorized"),
     VALIDATION_ERROR("error.validation"),
     INVALID_JSON("error.invalid.json"),
-    GENERIC_ERROR("error.generic");
+    GENERIC_ERROR("error.generic"),
+    GOOGLE_OAUTH2_UPDATE_NOT_ALLOWED("error.google.oauth2.update.not.allowed");
 
     private final String messageKey;
 

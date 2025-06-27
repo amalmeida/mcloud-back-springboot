@@ -45,6 +45,13 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(new ErrorResponse(ErrorCode.AUTH0_UPDATE_FAILED, message), HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
+    @ExceptionHandler(GoogleOAuth2UpdateNotAllowedException.class)
+    public ResponseEntity<ErrorResponse> handleGoogleOAuth2UpdateNotAllowed(GoogleOAuth2UpdateNotAllowedException ex, Locale locale) {
+        String message = getMessage("error.google.oauth2.update.not.allowed", new Object[]{ex.getUserId()}, locale,
+                "Não é possível atualizar nome ou email para usuários autenticados via Google OAuth2: {0}");
+        return new ResponseEntity<>(new ErrorResponse(ErrorCode.GOOGLE_OAUTH2_UPDATE_NOT_ALLOWED, message), HttpStatus.BAD_REQUEST);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidationException(MethodArgumentNotValidException ex, Locale locale) {
         String message = ex.getBindingResult().getFieldErrors().stream()

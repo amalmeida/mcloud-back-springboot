@@ -34,135 +34,145 @@ public class UserService {
 
     @Transactional(rollbackOn = Exception.class)
     public AppUser updateUser(String userId, UserUpdateDTO dto) {
+        // Validação preliminar do userId
+        if (userId == null || userId.trim().isEmpty() || !userId.matches("^(auth0|google-oauth2)\\|.+")) {
+            log.error("Formato de ID de usuário inválido: {}", userId);
+            throw new IllegalArgumentException(messageSource.getMessage("error.invalid.user.id", new Object[]{userId}, Locale.getDefault()));
+        }
+
+        AppUser appUser = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
+
+        // Verificar se é um usuário do Google OAuth2 e se name ou email estão sendo realmente alterados
+        boolean isGoogleUser = userId.startsWith("google-oauth2|");
+        if (isGoogleUser) {
+            String existingName = appUser.getName() != null ? appUser.getName().trim() : "";
+            String existingEmail = appUser.getEmail() != null ? appUser.getEmail().trim() : "";
+            String newName = dto.getName() != null ? dto.getName().trim() : "";
+            String newEmail = dto.getEmail() != null ? dto.getEmail().trim() : "";
+
+            if ((!newName.isEmpty() && !newName.equals(existingName)) || (!newEmail.isEmpty() && !newEmail.equals(existingEmail))) {
+                log.warn("Tentativa de alterar nome ou email para usuário Google OAuth2 com ID: {}", userId);
+                throw new GoogleOAuth2UpdateNotAllowedException(userId);
+            }
+        }
+
+        // Atualizar campos locais (banco de dados)
+        if (dto.getName() != null && !dto.getName().trim().isEmpty()) {
+            appUser.setName(dto.getName().trim());
+        }
+        if (dto.getEmail() != null && !dto.getEmail().trim().isEmpty()) {
+            appUser.setEmail(dto.getEmail().trim());
+        }
+        if (dto.getType() != null) {
+            appUser.setType(dto.getType());
+        }
+        if (dto.getDetails() != null) {
+            appUser.setDetails(dto.getDetails());
+        }
+        if (dto.getRoles() != null) {
+            appUser.setRoles(dto.getRoles());
+        }
+        if (dto.getPermissions() != null) {
+            appUser.setPermissions(dto.getPermissions());
+        }
+        if (dto.getPhone() != null) {
+            appUser.setPhone(dto.getPhone());
+        }
+        if (dto.getSecondaryPhone() != null) {
+            appUser.setSecondaryPhone(dto.getSecondaryPhone());
+        }
+        if (dto.getStatus() != null) {
+            appUser.setStatus(dto.getStatus());
+        }
+
+        // Atualizar endereço
+        Address address = appUser.getAddress() != null ? appUser.getAddress() : new Address();
+        boolean hasAddressData = false;
+        if (dto.getZipCode() != null && !dto.getZipCode().isBlank()) {
+            address.setZipCode(dto.getZipCode());
+            hasAddressData = true;
+        }
+        if (dto.getState() != null && !dto.getState().isBlank()) {
+            address.setState(dto.getState());
+            hasAddressData = true;
+        }
+        if (dto.getCity() != null && !dto.getCity().isBlank()) {
+            address.setCity(dto.getCity());
+            hasAddressData = true;
+        }
+        if (dto.getNeighborhood() != null && !dto.getNeighborhood().isBlank()) {
+            address.setNeighborhood(dto.getNeighborhood());
+            hasAddressData = true;
+        }
+        if (dto.getStreet() != null && !dto.getStreet().isBlank()) {
+            address.setStreet(dto.getStreet());
+            hasAddressData = true;
+        }
+        if (dto.getNumber() != null && !dto.getNumber().isBlank()) {
+            address.setNumber(dto.getNumber());
+            hasAddressData = true;
+        }
+        if (dto.getComplement() != null && !dto.getComplement().isBlank()) {
+            address.setComplement(dto.getComplement());
+            hasAddressData = true;
+        }
+
+        if (hasAddressData) {
+            address.setUser(appUser);
+            appUser.setAddress(address);
+        } else {
+            appUser.setAddress(null);
+        }
+
+        log.info("Salvando AppUser com endereço: {}", appUser.getAddress());
+        userRepository.save(appUser);
+
+        // Atualizar no Auth0
+        User auth0User = new User();
+        Map<String, Object> appMetadata = new HashMap<>();
+
+        // Apenas incluir name e email no auth0User se não for usuário Google OAuth2
+        if (!isGoogleUser) {
+            if (dto.getName() != null && !dto.getName().trim().isEmpty()) {
+                auth0User.setName(dto.getName().trim());
+            }
+            if (dto.getEmail() != null && !dto.getEmail().trim().isEmpty()) {
+                auth0User.setEmail(dto.getEmail().trim());
+            }
+        }
+
+        // Adicionar metadados
+        if (dto.getType() != null) {
+            appMetadata.put("type", dto.getType().getCode());
+        }
+        if (dto.getDetails() != null) {
+            appMetadata.put("details", dto.getDetails());
+        }
+        if (dto.getPhone() != null) {
+            appMetadata.put("phone", dto.getPhone());
+        }
+        if (dto.getSecondaryPhone() != null) {
+            appMetadata.put("secondaryPhone", dto.getSecondaryPhone());
+        }
+        if (dto.getStatus() != null) {
+            appMetadata.put("status", dto.getStatus().getCode());
+        }
+        if (hasAddressData) {
+            appMetadata.put("address", Map.of(
+                    "zipCode", address.getZipCode() != null ? address.getZipCode() : "",
+                    "state", address.getState() != null ? address.getState() : "",
+                    "city", address.getCity() != null ? address.getCity() : "",
+                    "neighborhood", address.getNeighborhood() != null ? address.getNeighborhood() : "",
+                    "street", address.getStreet() != null ? address.getStreet() : "",
+                    "number", address.getNumber() != null ? address.getNumber() : "",
+                    "complement", address.getComplement() != null ? address.getComplement() : ""
+            ));
+        }
+
+        auth0User.setAppMetadata(appMetadata);
+
         try {
-            AppUser appUser = userRepository.findById(userId)
-                    .orElseThrow(() -> new UserNotFoundException(userId));
-
-            // Verificar se é um usuário do Google OAuth2 e se name ou email estão sendo realmente alterados
-            boolean isGoogleUser = userId.startsWith("google-oauth2|");
-            if (isGoogleUser) {
-                boolean isNameChanged = dto.getName() != null && !dto.getName().equals(appUser.getName());
-                boolean isEmailChanged = dto.getEmail() != null && !dto.getEmail().equals(appUser.getEmail());
-                if (isNameChanged || isEmailChanged) {
-                    throw new GoogleOAuth2UpdateNotAllowedException(userId);
-                }
-            }
-
-            // Atualizar campos locais (banco de dados)
-            if (dto.getName() != null) {
-                appUser.setName(dto.getName());
-            }
-            if (dto.getEmail() != null) {
-                appUser.setEmail(dto.getEmail());
-            }
-            if (dto.getType() != null) {
-                appUser.setType(dto.getType());
-            }
-            if (dto.getDetails() != null) {
-                appUser.setDetails(dto.getDetails());
-            }
-            if (dto.getRoles() != null) {
-                appUser.setRoles(dto.getRoles());
-            }
-            if (dto.getPermissions() != null) {
-                appUser.setPermissions(dto.getPermissions());
-            }
-            if (dto.getPhone() != null) {
-                appUser.setPhone(dto.getPhone());
-            }
-            if (dto.getSecondaryPhone() != null) {
-                appUser.setSecondaryPhone(dto.getSecondaryPhone());
-            }
-            if (dto.getStatus() != null) {
-                appUser.setStatus(dto.getStatus());
-            }
-
-            // Atualizar endereço
-            Address address = appUser.getAddress() != null ? appUser.getAddress() : new Address();
-            boolean hasAddressData = false;
-            if (dto.getZipCode() != null && !dto.getZipCode().isBlank()) {
-                address.setZipCode(dto.getZipCode());
-                hasAddressData = true;
-            }
-            if (dto.getState() != null && !dto.getState().isBlank()) {
-                address.setState(dto.getState());
-                hasAddressData = true;
-            }
-            if (dto.getCity() != null && !dto.getCity().isBlank()) {
-                address.setCity(dto.getCity());
-                hasAddressData = true;
-            }
-            if (dto.getNeighborhood() != null && !dto.getNeighborhood().isBlank()) {
-                address.setNeighborhood(dto.getNeighborhood());
-                hasAddressData = true;
-            }
-            if (dto.getStreet() != null && !dto.getStreet().isBlank()) {
-                address.setStreet(dto.getStreet());
-                hasAddressData = true;
-            }
-            if (dto.getNumber() != null && !dto.getNumber().isBlank()) {
-                address.setNumber(dto.getNumber());
-                hasAddressData = true;
-            }
-            if (dto.getComplement() != null && !dto.getComplement().isBlank()) {
-                address.setComplement(dto.getComplement());
-                hasAddressData = true;
-            }
-
-            if (hasAddressData) {
-                address.setUser(appUser);
-                appUser.setAddress(address);
-            } else {
-                appUser.setAddress(null);
-            }
-
-            log.info("Salvando AppUser com endereço: {}", appUser.getAddress());
-            userRepository.save(appUser);
-
-            // Atualizar no Auth0
-            User auth0User = new User();
-            Map<String, Object> appMetadata = new HashMap<>();
-
-            // Apenas incluir name e email no auth0User se não for usuário Google OAuth2
-            if (!isGoogleUser) {
-                if (dto.getName() != null) {
-                    auth0User.setName(dto.getName());
-                }
-                if (dto.getEmail() != null) {
-                    auth0User.setEmail(dto.getEmail());
-                }
-            }
-
-            // Adicionar metadados
-            if (dto.getType() != null) {
-                appMetadata.put("type", dto.getType().getCode());
-            }
-            if (dto.getDetails() != null) {
-                appMetadata.put("details", dto.getDetails());
-            }
-            if (dto.getPhone() != null) {
-                appMetadata.put("phone", dto.getPhone());
-            }
-            if (dto.getSecondaryPhone() != null) {
-                appMetadata.put("secondaryPhone", dto.getSecondaryPhone());
-            }
-            if (dto.getStatus() != null) {
-                appMetadata.put("status", dto.getStatus().getCode());
-            }
-            if (hasAddressData) {
-                appMetadata.put("address", Map.of(
-                        "zipCode", address.getZipCode() != null ? address.getZipCode() : "",
-                        "state", address.getState() != null ? address.getState() : "",
-                        "city", address.getCity() != null ? address.getCity() : "",
-                        "neighborhood", address.getNeighborhood() != null ? address.getNeighborhood() : "",
-                        "street", address.getStreet() != null ? address.getStreet() : "",
-                        "number", address.getNumber() != null ? address.getNumber() : "",
-                        "complement", address.getComplement() != null ? address.getComplement() : ""
-                ));
-            }
-
-            auth0User.setAppMetadata(appMetadata);
-
             // Atualizar usuário no Auth0
             managementAPI.users().update(userId, auth0User).execute();
 
@@ -182,16 +192,21 @@ public class UserService {
 
             // Sincronizar usuário com o banco local após atualização no Auth0
             syncUserFromAuth0(userId);
-
-            return appUser;
         } catch (Auth0Exception e) {
             log.error("Falha ao atualizar usuário no Auth0 com ID: {}", userId, e);
-            throw new RuntimeException("Erro ao atualizar usuário no Auth0: " + e.getMessage(), e);
+            throw new RuntimeException(messageSource.getMessage("error.auth0.update.failed", new Object[]{e.getMessage()}, Locale.getDefault()), e);
         }
+
+        return appUser;
     }
 
     @Transactional
     public AppUser getUserById(String userId) {
+        if (userId == null || userId.trim().isEmpty() || !userId.matches("^(auth0|google-oauth2)\\|.+")) {
+            log.error("Formato de ID de usuário inválido: {}", userId);
+            throw new IllegalArgumentException(messageSource.getMessage("error.invalid.user.id", new Object[]{userId}, Locale.getDefault()));
+        }
+
         Optional<AppUser> appUserOptional = userRepository.findById(userId);
         if (appUserOptional.isPresent()) {
             log.info("Usuário com ID {} encontrado no banco local", userId);
@@ -209,6 +224,11 @@ public class UserService {
 
     @Transactional
     public AppUser inactivateUser(String userId) {
+        if (userId == null || userId.trim().isEmpty() || !userId.matches("^(auth0|google-oauth2)\\|.+")) {
+            log.error("Formato de ID de usuário inválido: {}", userId);
+            throw new IllegalArgumentException(messageSource.getMessage("error.invalid.user.id", new Object[]{userId}, Locale.getDefault()));
+        }
+
         try {
             AppUser appUser = userRepository.findById(userId)
                     .orElseThrow(() -> new UserNotFoundException(userId));
@@ -228,7 +248,7 @@ public class UserService {
             return appUser;
         } catch (Auth0Exception e) {
             log.error("Falha ao inativar usuário no Auth0 com ID: {}", userId, e);
-            throw new RuntimeException("Erro ao inativar usuário no Auth0: " + e.getMessage(), e);
+            throw new RuntimeException(messageSource.getMessage("error.auth0.update.failed", new Object[]{e.getMessage()}, Locale.getDefault()), e);
         }
     }
 
@@ -324,12 +344,12 @@ public class UserService {
             return appUsers;
         } catch (Exception e) {
             log.error("Falha ao listar usuários do banco local", e);
-            throw new RuntimeException("Erro ao listar usuários do banco local: " + e.getMessage(), e);
+            throw new RuntimeException(messageSource.getMessage("error.generic", new Object[]{e.getMessage()}, Locale.getDefault()), e);
         }
     }
 
     @Async
-    @Scheduled(fixedRate = 5 * 60 * 1000) // 30 minutos em milissegundos - 5min para testes
+    @Scheduled(fixedRate = 5 * 60 * 1000) // 5 minutos em milissegundos
     public CompletableFuture<Void> syncAllUsersFromAuth0Async() {
         try {
             log.info("Iniciando sincronização periódica com o Auth0");

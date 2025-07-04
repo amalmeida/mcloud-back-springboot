@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 @Slf4j
 @RestController
@@ -139,4 +140,50 @@ public class UserController {
     public ResponseEntity<List<String>> listPermissions() {
         return ResponseEntity.ok(userService.listPermissions());
     }
+
+    @Operation(summary = "Atualizar status do usuário", description = "Atualiza o status de um usuário identificado por `userId` para ativo (1) ou inativo (0). Aplica no banco local e no Auth0. Exige permissão 'write:users' em produção (autenticação desativada em desenvolvimento).")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Status do usuário atualizado com sucesso", content = @Content(mediaType = "application/json", schema = @Schema(implementation = AppUser.class))),
+            @ApiResponse(responseCode = "400", description = "Formato de ID ou status inválido", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "Usuário não encontrado", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "500", description = "Erro interno", content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PatchMapping("/{userId}/status")
+    public ResponseEntity<Object> updateUserStatus(@Parameter(description = "ID do usuário a atualizar (ex.: `auth0|123456789`)") @PathVariable String userId, @RequestBody Map<String, Integer> request) {
+        try {
+            Integer status = request.get("status");
+            if (status == null) {
+                String message = messageSource.getMessage("error.invalid.status", new Object[]{"null"}, Locale.ROOT);
+                ErrorResponse errorResponse = new ErrorResponse(ErrorCode.VALIDATION_ERROR, message);
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            AppUser updatedUser = userService.updateUserStatus(userId, status);
+            return ResponseEntity.ok(updatedUser);
+        } catch (IllegalArgumentException ex) {
+            ErrorResponse errorResponse = new ErrorResponse(ErrorCode.VALIDATION_ERROR, ex.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        } catch (UserNotFoundException ex) {
+            String message;
+            try {
+                message = messageSource.getMessage("error.user.not.found", new Object[]{ex.getUserId()}, Locale.ROOT);
+            } catch (NoSuchMessageException e) {
+                log.warn("Mensagem 'error.user.not.found' não encontrada, usando mensagem padrão");
+                message = "Usuário com ID " + ex.getUserId() + " não encontrado";
+            }
+            ErrorResponse errorResponse = new ErrorResponse(ErrorCode.USER_NOT_FOUND, message);
+            return ResponseEntity.status(404).body(errorResponse);
+        } catch (Exception ex) {
+            String message;
+            try {
+                message = messageSource.getMessage("error.generic", new Object[]{ex.getMessage()}, Locale.ROOT);
+            } catch (NoSuchMessageException e) {
+                log.warn("Mensagem 'error.generic' não encontrada, usando mensagem padrão");
+                message = "Erro inesperado: " + ex.getMessage();
+            }
+            log.error("Erro inesperado no controlador: {}", ex.getMessage(), ex);
+            ErrorResponse errorResponse = new ErrorResponse(ErrorCode.GENERIC_ERROR, message);
+            return ResponseEntity.status(500).body(errorResponse);
+        }
+    }
+
 }

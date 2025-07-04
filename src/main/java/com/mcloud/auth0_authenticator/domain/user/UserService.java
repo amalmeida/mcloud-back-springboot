@@ -34,7 +34,6 @@ public class UserService {
 
     @Transactional(rollbackOn = Exception.class)
     public AppUser updateUser(String userId, UserUpdateDTO dto) {
-        // Validação preliminar do userId
         if (userId == null || userId.trim().isEmpty() || !userId.matches("^(auth0|google-oauth2)\\|.+")) {
             log.error("Formato de ID de usuário inválido: {}", userId);
             throw new IllegalArgumentException(messageSource.getMessage("error.invalid.user.id", new Object[]{userId}, Locale.getDefault()));
@@ -43,7 +42,6 @@ public class UserService {
         AppUser appUser = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
 
-        // Verificar se é um usuário do Google OAuth2 e se name ou email estão sendo realmente alterados
         boolean isGoogleUser = userId.startsWith("google-oauth2|");
         if (isGoogleUser) {
             String existingName = appUser.getName() != null ? appUser.getName().trim() : "";
@@ -57,7 +55,6 @@ public class UserService {
             }
         }
 
-        // Atualizar campos locais (banco de dados)
         if (dto.getName() != null && !dto.getName().trim().isEmpty()) {
             appUser.setName(dto.getName().trim());
         }
@@ -86,7 +83,6 @@ public class UserService {
             appUser.setStatus(dto.getStatus());
         }
 
-        // Atualizar endereço
         Address address = appUser.getAddress() != null ? appUser.getAddress() : new Address();
         boolean hasAddressData = false;
         if (dto.getZipCode() != null && !dto.getZipCode().isBlank()) {
@@ -128,11 +124,9 @@ public class UserService {
         log.info("Salvando AppUser com endereço: {}", appUser.getAddress());
         userRepository.save(appUser);
 
-        // Atualizar no Auth0
         User auth0User = new User();
         Map<String, Object> appMetadata = new HashMap<>();
 
-        // Apenas incluir name e email no auth0User se não for usuário Google OAuth2
         if (!isGoogleUser) {
             if (dto.getName() != null && !dto.getName().trim().isEmpty()) {
                 auth0User.setName(dto.getName().trim());
@@ -142,7 +136,6 @@ public class UserService {
             }
         }
 
-        // Adicionar metadados
         if (dto.getType() != null) {
             appMetadata.put("type", dto.getType().getCode());
         }
@@ -173,10 +166,7 @@ public class UserService {
         auth0User.setAppMetadata(appMetadata);
 
         try {
-            // Atualizar usuário no Auth0
             managementAPI.users().update(userId, auth0User).execute();
-
-            // Atualizar roles no Auth0
             if (dto.getRoles() != null && !dto.getRoles().isEmpty()) {
                 List<Role> allRoles = managementAPI.roles().list(new RolesFilter()).execute().getBody().getItems();
                 List<String> roleIds = allRoles.stream()
@@ -190,7 +180,6 @@ public class UserService {
                 }
             }
 
-            // Sincronizar usuário com o banco local após atualização no Auth0
             syncUserFromAuth0(userId);
         } catch (Auth0Exception e) {
             log.error("Falha ao atualizar usuário no Auth0 com ID: {}", userId, e);
@@ -213,43 +202,65 @@ public class UserService {
             return appUserOptional.get();
         }
 
-        // Se não encontrado localmente, sincronizar com o Auth0
         log.info("Usuário com ID {} não encontrado no banco local, sincronizando com o Auth0", userId);
         syncUserFromAuth0(userId);
 
-        // Tentar buscar novamente após sincronização
         return userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
     }
 
     @Transactional
-    public AppUser inactivateUser(String userId) {
+    public AppUser updateUserStatus(String userId, int status) {
         if (userId == null || userId.trim().isEmpty() || !userId.matches("^(auth0|google-oauth2)\\|.+")) {
             log.error("Formato de ID de usuário inválido: {}", userId);
             throw new IllegalArgumentException(messageSource.getMessage("error.invalid.user.id", new Object[]{userId}, Locale.getDefault()));
         }
 
+        String statusCode;
+        switch (status) {
+            case 0:
+                statusCode = "inativo";
+                break;
+            case 1:
+                statusCode = "ativo";
+                break;
+            default:
+                log.error("Valor de status inválido: {}", status);
+                throw new IllegalArgumentException(messageSource.getMessage("error.invalid.status", new Object[]{status}, Locale.getDefault()));
+        }
+
+        UserStatus userStatus;
         try {
-            AppUser appUser = userRepository.findById(userId)
-                    .orElseThrow(() -> new UserNotFoundException(userId));
+            userStatus = UserStatus.fromCode(statusCode);
+        } catch (IllegalArgumentException e) {
+            log.error("Erro ao converter status: {}", statusCode);
+            throw new IllegalArgumentException(messageSource.getMessage("error.invalid.status", new Object[]{status}, Locale.getDefault()));
+        }
 
-            appUser.setStatus(UserStatus.INATIVO);
+        AppUser appUser = userRepository.findById(userId)
+                .orElseThrow(() -> {
+                    log.error("Usuário com ID {} não encontrado no banco local", userId);
+                    return new UserNotFoundException(userId);
+                });
 
-            log.info("Inativando usuário com ID: {}", userId);
-            userRepository.save(appUser);
+        appUser.setStatus(userStatus);
+        log.info("Atualizando status do usuário com ID {} para {}", userId, userStatus.getCode());
+        userRepository.save(appUser);
 
-            User auth0User = new User();
-            Map<String, Object> appMetadata = new HashMap<>();
-            appMetadata.put("status", UserStatus.INATIVO.getCode());
-            auth0User.setAppMetadata(appMetadata);
+        User auth0User = new User();
+        Map<String, Object> appMetadata = new HashMap<>();
+        appMetadata.put("status", userStatus.getCode());
+        auth0User.setAppMetadata(appMetadata);
 
+        try {
             managementAPI.users().update(userId, auth0User).execute();
-
-            return appUser;
+            log.info("Status do usuário com ID {} atualizado com sucesso no Auth0", userId);
         } catch (Auth0Exception e) {
-            log.error("Falha ao inativar usuário no Auth0 com ID: {}", userId, e);
+            log.error("Falha ao atualizar status do usuário no Auth0 com ID: {}, erro: {}", userId, e.getMessage());
             throw new RuntimeException(messageSource.getMessage("error.auth0.update.failed", new Object[]{e.getMessage()}, Locale.getDefault()), e);
         }
+
+        return appUser;
     }
 
     private AppUser convertAuth0User(com.auth0.json.mgmt.users.User auth0User) {
@@ -257,14 +268,12 @@ public class UserService {
         appUser.setId(auth0User.getId());
         appUser.setEmail(auth0User.getEmail() != null ? auth0User.getEmail() : "");
         appUser.setName(auth0User.getName());
-        appUser.setStatus(UserStatus.ATIVO); // Valor padrão
+        appUser.setStatus(UserStatus.ATIVO);
 
-        // Buscar roles do usuário
         try {
             List<Role> roles = managementAPI.users().listRoles(auth0User.getId(), null).execute().getBody().getItems();
             appUser.setRoles(roles.stream().map(Role::getName).collect(Collectors.toList()));
 
-            // Buscar permissões associadas aos roles
             Set<String> permissions = new HashSet<>();
             for (Role role : roles) {
                 List<Permission> permissionItems = managementAPI.roles().listPermissions(role.getId(), null)
@@ -349,7 +358,7 @@ public class UserService {
     }
 
     @Async
-    @Scheduled(fixedRate = 5 * 60 * 1000) // 5 minutos em milissegundos
+    @Scheduled(fixedRate = 5 * 60 * 1000)
     public CompletableFuture<Void> syncAllUsersFromAuth0Async() {
         try {
             log.info("Iniciando sincronização periódica com o Auth0");
@@ -360,7 +369,6 @@ public class UserService {
                     .map(this::convertAuth0User)
                     .collect(Collectors.toList());
 
-            // Atualizar apenas os usuários que mudaram ou são novos
             List<AppUser> existingUsers = userRepository.findAll();
             Map<String, AppUser> existingUsersMap = existingUsers.stream()
                     .collect(Collectors.toMap(AppUser::getId, user -> user));

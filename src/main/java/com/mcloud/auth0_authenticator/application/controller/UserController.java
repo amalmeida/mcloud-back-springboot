@@ -82,6 +82,8 @@ public class UserController {
     @PutMapping("/{userId}")
     public ResponseEntity<Object> updateUser(@Parameter(description = "ID do usuário a atualizar (ex.: `auth0|123456789`)") @PathVariable String userId, @Valid @RequestBody UserUpdateDTO dto) {
         try {
+            log.info("Controller: Editando usuário {} ", userId);
+
             AppUser updatedAppUser = userService.updateUser(userId, dto);
             return ResponseEntity.ok(updatedAppUser);
         } catch (GoogleOAuth2UpdateNotAllowedException ex) {

@@ -34,3 +34,8 @@ auth0:
     domain: dev-h6bjevho.us.auth0.com
     client-id: TqXccKgqvMK0vBBnCBU999gtESLAuuz5
     client-secret: SbJ0min8F-DYtVkKeFjB3t0Sn0WAIEoTwh2grym4xPa_zTDjGI447xXbYIIsOOE0
+
+logging:
+  level:
+    root: INFO
+    com.mcloud: DEBUG

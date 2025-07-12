@@ -34,6 +34,8 @@ public class UserService {
 
     @Transactional(rollbackOn = Exception.class)
     public AppUser updateUser(String userId, UserUpdateDTO dto) {
+        log.info("Service: Editando usuário {} ", userId);
+
         if (userId == null || userId.trim().isEmpty() || !userId.matches("^(auth0|google-oauth2)\\|.+")) {
             log.error("Formato de ID de usuário inválido: {}", userId);
             throw new IllegalArgumentException(messageSource.getMessage("error.invalid.user.id", new Object[]{userId}, Locale.getDefault()));
@@ -166,6 +168,8 @@ public class UserService {
         auth0User.setAppMetadata(appMetadata);
 
         try {
+            log.info("Editando na AWS o usuário {} ", userId);
+
             managementAPI.users().update(userId, auth0User).execute();
             if (dto.getRoles() != null && !dto.getRoles().isEmpty()) {
                 List<Role> allRoles = managementAPI.roles().list(new RolesFilter()).execute().getBody().getItems();

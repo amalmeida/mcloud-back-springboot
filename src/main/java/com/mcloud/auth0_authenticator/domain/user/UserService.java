@@ -183,6 +183,7 @@ public class UserService {
             syncUserFromAuth0(userId);
         } catch (Auth0Exception e) {
             log.error("Falha ao atualizar usuário no Auth0 com ID: {}", userId, e);
+            e.printStackTrace(); // Adiciona stack trace completo no log
             throw new RuntimeException(messageSource.getMessage("error.auth0.update.failed", new Object[]{e.getMessage()}, Locale.getDefault()), e);
         }
 

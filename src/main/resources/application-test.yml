@@ -1,13 +1,13 @@
 spring:
   datasource:
-    url: jdbc:postgresql://postgres:5432/auth0_authenticator
-    username: mcloud_user
-    password: admin@123
+    url: jdbc:postgresql://mcloud-db.cdasooecklyd.sa-east-1.rds.amazonaws.com:5432/mcloud
+    username: MCloud
+    password: McloudDb123
     driver-class-name: org.postgresql.Driver
 
   jpa:
     hibernate:
-      ddl-auto: create
+      ddl-auto: update
     show-sql: true
     properties:
       hibernate:
@@ -19,6 +19,13 @@ spring:
         jwt:
           issuer-uri: https://dev-h6bjevho.us.auth0.com/
           audience: https://api.mcloud.com
+
+messages:
+  basename: messages
+  fallback-to-system-locale: false
+  web:
+    locale: pt_BR
+    locale-resolver: fixed
 
 auth0:
   namespace: https://api.mcloud.com

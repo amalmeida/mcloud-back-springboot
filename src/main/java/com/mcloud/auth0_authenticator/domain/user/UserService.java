@@ -363,7 +363,7 @@ public class UserService {
     }
 
     @Async
-    @Scheduled(fixedRate = 5 * 60 * 1000)
+    @Scheduled(fixedRate = 8 * 60 * 60 * 1000) // a cada 8 horas
     public CompletableFuture<Void> syncAllUsersFromAuth0Async() {
         try {
             log.info("Iniciando sincronização periódica com o Auth0");

@@ -16,8 +16,10 @@ public class ApplicationConfig {
         ReloadableResourceBundleMessageSource messageSource = new ReloadableResourceBundleMessageSource();
         messageSource.setBasename("classpath:messages");
         messageSource.setDefaultEncoding("UTF-8");
-        messageSource.setDefaultLocale(Locale.ROOT);
-        messageSource.setUseCodeAsDefaultMessage(false);
+        messageSource.setDefaultLocale(new Locale("pt", "BR")); // Força o locale pt_BR
+        messageSource.setUseCodeAsDefaultMessage(false); // Evita usar o código como mensagem padrão
+        messageSource.setFallbackToSystemLocale(false); // Desativa fallback para o locale do sistema
         return messageSource;
     }
+
 }

@@ -84,6 +84,18 @@ git push origin feature/sua-feature
 
 ---
 
+## 📦 Build Para atualizar AWS (Docker)
+# 1. Login no ECR com região correta 
+aws ecr get-login-password --region sa-east-1 | docker login --username AWS --password-stdin 775525057355.dkr.ecr.sa-east-1.amazonaws.com
+
+# 2. Build da imagem Docker
+docker build -t mcloud-auth0-authenticator:latest .
+
+# 3. Tag da imagem para o ECR
+docker tag mcloud-auth0-authenticator:latest 775525057355.dkr.ecr.sa-east-1.amazonaws.com/mcloud-backend:latest
+
+# 4. Push da imagem para o ECR
+docker push 775525057355.dkr.ecr.sa-east-1.amazonaws.com/mcloud-backend:latest
 ## 📬 Contato
 
 Projeto mantido por [André Massafra Almeida](https://www.linkedin.com/in/andre-massafra-almeida/)  

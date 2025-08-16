@@ -77,4 +77,4 @@ public class SecurityConfig {
     public RoleConverter roleConverter(@Value("${auth0.roles-claim}") String rolesClaim) {
         return new RoleConverter(rolesClaim);
     }
-}git
+}

@@ -45,7 +45,7 @@ public class AppUser {
     @ElementCollection
     private List<String> permissions;
 
-    @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToOne(fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "address_id")
     @JsonManagedReference
     private Address address;

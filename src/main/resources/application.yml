@@ -1,9 +1,17 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/auth0_authenticator
-    username: mcloud_user
+    url: jdbc:postgresql://localhost:5432/mcloud
+    username: MCloud
     password: admin@123
     driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: create
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
 
   task:
     scheduling:
@@ -17,14 +25,6 @@ spring:
   jackson:
     serialization:
       fail-on-empty-beans: false
-
-  jpa:
-    hibernate:
-      ddl-auto: create
-    show-sql: true
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
 
   security:
     oauth2:
@@ -43,6 +43,11 @@ auth0:
   frontend:
     client-id: o9k5Uv8S5jvNENvsxxvP72p3ZFzg2vFy
     client-secret: TEV5VHt6yap0arw9JWTyDp9dOsqD3989PZlEAKgmfYfF8ofpjnHD31zBqPmwCxu3
+
+logging:
+  level:
+    root: INFO
+    com.mcloud: DEBUG
 
 springdoc:
   api-docs:

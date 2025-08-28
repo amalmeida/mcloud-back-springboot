@@ -1,5 +1,6 @@
-package com.mcloud.auth0_authenticator.domain.user;
+package com.mcloud.auth0_authenticator.application.dto;
 
+import com.mcloud.auth0_authenticator.domain.user.UserType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;

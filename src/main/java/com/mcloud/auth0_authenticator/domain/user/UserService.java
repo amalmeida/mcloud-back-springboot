@@ -4,17 +4,24 @@ import com.auth0.client.mgmt.ManagementAPI;
 import com.auth0.client.mgmt.filter.RolesFilter;
 import com.auth0.exception.APIException;
 import com.auth0.exception.Auth0Exception;
-import com.auth0.json.mgmt.users.User;
-import com.auth0.json.mgmt.roles.Role;
-import com.auth0.json.mgmt.users.UsersPage;
 import com.auth0.json.mgmt.permissions.Permission;
+import com.auth0.json.mgmt.roles.Role;
+import com.auth0.json.mgmt.users.User;
+import com.auth0.json.mgmt.users.UsersPage;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mcloud.auth0_authenticator.application.dto.AddressDTO;
+import com.mcloud.auth0_authenticator.application.dto.UserListItemDTO;
+import com.mcloud.auth0_authenticator.application.dto.UserResponseDTO;
+import com.mcloud.auth0_authenticator.application.dto.UserUpdateDTO;
+import com.mcloud.auth0_authenticator.application.mapper.UserMapper;
 import com.mcloud.auth0_authenticator.domain.exception.GoogleOAuth2UpdateNotAllowedException;
 import com.mcloud.auth0_authenticator.domain.exception.UserNotFoundException;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -27,171 +34,32 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class UserService {
+
     private final UserRepository userRepository;
     private final ManagementAPI managementAPI;
     private final MessageSource messageSource;
     private final ObjectMapper objectMapper;
 
-    @Transactional(rollbackOn = Exception.class)
-    public AppUser updateUser(String userId, UserUpdateDTO dto) {
-        log.info("Service: Editando usuário {} ", userId);
 
-        if (userId == null || userId.trim().isEmpty() || !userId.matches("^(auth0|google-oauth2)\\|.+")) {
-            log.error("Formato de ID de usuário inválido: {}", userId);
-            throw new IllegalArgumentException(messageSource.getMessage("error.invalid.user.id", new Object[]{userId}, Locale.getDefault()));
-        }
+    @Transactional
+    public UserResponseDTO getUserDtoById(String userId) {
+        AppUser u = getUserById(userId);
+        return UserMapper.toResponse(u);
+    }
 
-        AppUser appUser = userRepository.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException(userId));
+    @Transactional(rollbackFor = Exception.class)
+    public UserResponseDTO updateUserReturningDto(String userId, UserUpdateDTO dto) {
+        AppUser updated = updateUserInternal(userId, dto);
+        return UserMapper.toResponse(updated);
+    }
 
-        boolean isGoogleUser = userId.startsWith("google-oauth2|");
-        if (isGoogleUser) {
-            String existingName = appUser.getName() != null ? appUser.getName().trim() : "";
-            String existingEmail = appUser.getEmail() != null ? appUser.getEmail().trim() : "";
-            String newName = dto.getName() != null ? dto.getName().trim() : "";
-            String newEmail = dto.getEmail() != null ? dto.getEmail().trim() : "";
-
-            if ((!newName.isEmpty() && !newName.equals(existingName)) || (!newEmail.isEmpty() && !newEmail.equals(existingEmail))) {
-                log.warn("Tentativa de alterar nome ou email para usuário Google OAuth2 com ID: {}", userId);
-                throw new GoogleOAuth2UpdateNotAllowedException(userId);
-            }
-        }
-
-        if (dto.getName() != null && !dto.getName().trim().isEmpty()) {
-            appUser.setName(dto.getName().trim());
-        }
-        if (dto.getEmail() != null && !dto.getEmail().trim().isEmpty()) {
-            appUser.setEmail(dto.getEmail().trim());
-        }
-        if (dto.getType() != null) {
-            appUser.setType(dto.getType());
-        }
-        if (dto.getDetails() != null) {
-            appUser.setDetails(dto.getDetails());
-        }
-        if (dto.getRoles() != null) {
-            appUser.setRoles(dto.getRoles());
-        }
-        if (dto.getPermissions() != null) {
-            appUser.setPermissions(dto.getPermissions());
-        }
-        if (dto.getPhone() != null) {
-            appUser.setPhone(dto.getPhone());
-        }
-        if (dto.getSecondaryPhone() != null) {
-            appUser.setSecondaryPhone(dto.getSecondaryPhone());
-        }
-        if (dto.getStatus() != null) {
-            appUser.setStatus(dto.getStatus());
-        }
-
-        Address address = appUser.getAddress() != null ? appUser.getAddress() : new Address();
-        boolean hasAddressData = false;
-        if (dto.getZipCode() != null && !dto.getZipCode().isBlank()) {
-            address.setZipCode(dto.getZipCode());
-            hasAddressData = true;
-        }
-        if (dto.getState() != null && !dto.getState().isBlank()) {
-            address.setState(dto.getState());
-            hasAddressData = true;
-        }
-        if (dto.getCity() != null && !dto.getCity().isBlank()) {
-            address.setCity(dto.getCity());
-            hasAddressData = true;
-        }
-        if (dto.getNeighborhood() != null && !dto.getNeighborhood().isBlank()) {
-            address.setNeighborhood(dto.getNeighborhood());
-            hasAddressData = true;
-        }
-        if (dto.getStreet() != null && !dto.getStreet().isBlank()) {
-            address.setStreet(dto.getStreet());
-            hasAddressData = true;
-        }
-        if (dto.getNumber() != null && !dto.getNumber().isBlank()) {
-            address.setNumber(dto.getNumber());
-            hasAddressData = true;
-        }
-        if (dto.getComplement() != null && !dto.getComplement().isBlank()) {
-            address.setComplement(dto.getComplement());
-            hasAddressData = true;
-        }
-
-        if (hasAddressData) {
-            address.setUser(appUser);
-            appUser.setAddress(address);
-        } else {
-            appUser.setAddress(null);
-        }
-
-        log.info("Salvando AppUser com endereço: {}", appUser.getAddress());
-        userRepository.save(appUser);
-
-        User auth0User = new User();
-        Map<String, Object> appMetadata = new HashMap<>();
-
-        if (!isGoogleUser) {
-            if (dto.getName() != null && !dto.getName().trim().isEmpty()) {
-                auth0User.setName(dto.getName().trim());
-            }
-            if (dto.getEmail() != null && !dto.getEmail().trim().isEmpty()) {
-                auth0User.setEmail(dto.getEmail().trim());
-            }
-        }
-
-        if (dto.getType() != null) {
-            appMetadata.put("type", dto.getType().getCode());
-        }
-        if (dto.getDetails() != null) {
-            appMetadata.put("details", dto.getDetails());
-        }
-        if (dto.getPhone() != null) {
-            appMetadata.put("phone", dto.getPhone());
-        }
-        if (dto.getSecondaryPhone() != null) {
-            appMetadata.put("secondaryPhone", dto.getSecondaryPhone());
-        }
-        if (dto.getStatus() != null) {
-            appMetadata.put("status", dto.getStatus().getCode());
-        }
-        if (hasAddressData) {
-            appMetadata.put("address", Map.of(
-                    "zipCode", address.getZipCode() != null ? address.getZipCode() : "",
-                    "state", address.getState() != null ? address.getState() : "",
-                    "city", address.getCity() != null ? address.getCity() : "",
-                    "neighborhood", address.getNeighborhood() != null ? address.getNeighborhood() : "",
-                    "street", address.getStreet() != null ? address.getStreet() : "",
-                    "number", address.getNumber() != null ? address.getNumber() : "",
-                    "complement", address.getComplement() != null ? address.getComplement() : ""
-            ));
-        }
-
-        auth0User.setAppMetadata(appMetadata);
-
-        try {
-            log.info("Editando na AWS o usuário {} ", userId);
-
-            managementAPI.users().update(userId, auth0User).execute();
-            if (dto.getRoles() != null && !dto.getRoles().isEmpty()) {
-                List<Role> allRoles = managementAPI.roles().list(new RolesFilter()).execute().getBody().getItems();
-                List<String> roleIds = allRoles.stream()
-                        .filter(role -> dto.getRoles().contains(role.getName()))
-                        .map(Role::getId)
-                        .collect(Collectors.toList());
-
-                if (!roleIds.isEmpty()) {
-                    managementAPI.users().removeRoles(userId, managementAPI.users().listRoles(userId, null).execute().getBody().getItems().stream().map(Role::getId).collect(Collectors.toList())).execute();
-                    managementAPI.users().addRoles(userId, roleIds).execute();
-                }
-            }
-
-            syncUserFromAuth0(userId);
-        } catch (Auth0Exception e) {
-            log.error("Falha ao atualizar usuário no Auth0 com ID: {}", userId, e);
-            e.printStackTrace(); // Adiciona stack trace completo no log
-            throw new RuntimeException(messageSource.getMessage("error.auth0.update.failed", new Object[]{e.getMessage()}, Locale.getDefault()), e);
-        }
-
-        return appUser;
+    @Transactional(readOnly = true)
+    public Page<UserListItemDTO> searchUsersList(String name, String email, org.springframework.data.domain.Pageable pageable) {
+        String n = name == null ? "" : name;
+        String e = email == null ? "" : email;
+        return userRepository
+                .findAllByNameContainingIgnoreCaseAndEmailContainingIgnoreCase(n, e, pageable)
+                .map(UserMapper::toListItem);
     }
 
     @Transactional
@@ -223,12 +91,8 @@ public class UserService {
 
         String statusCode;
         switch (status) {
-            case 0:
-                statusCode = "inativo";
-                break;
-            case 1:
-                statusCode = "ativo";
-                break;
+            case 0: statusCode = "inativo"; break;
+            case 1: statusCode = "ativo";   break;
             default:
                 log.error("Valor de status inválido: {}", status);
                 throw new IllegalArgumentException(messageSource.getMessage("error.invalid.status", new Object[]{status}, Locale.getDefault()));
@@ -266,100 +130,6 @@ public class UserService {
         }
 
         return appUser;
-    }
-
-    private AppUser convertAuth0User(com.auth0.json.mgmt.users.User auth0User) {
-        AppUser appUser = new AppUser();
-        appUser.setId(auth0User.getId());
-        appUser.setEmail(auth0User.getEmail() != null ? auth0User.getEmail() : "");
-        appUser.setName(auth0User.getName());
-        appUser.setStatus(UserStatus.ATIVO);
-
-        try {
-            List<Role> roles = managementAPI.users().listRoles(auth0User.getId(), null).execute().getBody().getItems();
-            appUser.setRoles(roles.stream().map(Role::getName).collect(Collectors.toList()));
-
-            Set<String> permissions = new HashSet<>();
-            for (Role role : roles) {
-                List<Permission> permissionItems = managementAPI.roles().listPermissions(role.getId(), null)
-                        .execute().getBody().getItems();
-                permissions.addAll(permissionItems.stream()
-                        .map(Permission::getName)
-                        .filter(Objects::nonNull)
-                        .collect(Collectors.toList()));
-            }
-            appUser.setPermissions(new ArrayList<>(permissions));
-        } catch (Auth0Exception e) {
-            log.error("Falha ao buscar roles ou permissões para usuário: {}", auth0User.getId(), e);
-        }
-
-        if (auth0User.getAppMetadata() != null) {
-            Object type = auth0User.getAppMetadata().get("type");
-            Object details = auth0User.getAppMetadata().get("details");
-            Object phone = auth0User.getAppMetadata().get("phone");
-            Object secondaryPhone = auth0User.getAppMetadata().get("secondaryPhone");
-            Object status = auth0User.getAppMetadata().get("status");
-            Object addressObj = auth0User.getAppMetadata().get("address");
-
-            if (type != null) {
-                try {
-                    appUser.setType(UserType.fromCode(type.toString()));
-                } catch (IllegalArgumentException e) {
-                    log.warn("Tipo de usuário inválido: {}", type);
-                }
-            }
-            if (details != null) {
-                try {
-                    appUser.setDetails(objectMapper.convertValue(details, UserDetails.class));
-                } catch (Exception e) {
-                    log.warn("Falha ao desserializar details: {}", details, e);
-                }
-            }
-            if (phone != null) {
-                appUser.setPhone(phone.toString());
-            }
-            if (secondaryPhone != null) {
-                appUser.setSecondaryPhone(secondaryPhone.toString());
-            }
-            if (status != null) {
-                try {
-                    appUser.setStatus(UserStatus.fromCode(status.toString()));
-                } catch (IllegalArgumentException e) {
-                    log.warn("Status de usuário inválido: {}", status);
-                }
-            }
-            if (addressObj != null) {
-                try {
-                    Map<String, String> addressMap = objectMapper.convertValue(addressObj, Map.class);
-                    Address address = new Address();
-                    address.setZipCode(addressMap.getOrDefault("zipCode", ""));
-                    address.setState(addressMap.getOrDefault("state", ""));
-                    address.setCity(addressMap.getOrDefault("city", ""));
-                    address.setNeighborhood(addressMap.getOrDefault("neighborhood", ""));
-                    address.setStreet(addressMap.getOrDefault("street", ""));
-                    address.setNumber(addressMap.getOrDefault("number", ""));
-                    address.setComplement(addressMap.getOrDefault("complement", ""));
-                    address.setUser(appUser);
-                    appUser.setAddress(address);
-                    log.info("Endereço recuperado do Auth0 para usuário {}: {}", auth0User.getId(), address);
-                } catch (Exception e) {
-                    log.warn("Falha ao desserializar endereço: {}", addressObj, e);
-                }
-            }
-        }
-
-        return appUser;
-    }
-
-    public List<AppUser> listUsers() {
-        try {
-            List<AppUser> appUsers = userRepository.findAll();
-            log.info("Listando {} usuários do banco local", appUsers.size());
-            return appUsers;
-        } catch (Exception e) {
-            log.error("Falha ao listar usuários do banco local", e);
-            throw new RuntimeException(messageSource.getMessage("error.generic", new Object[]{e.getMessage()}, Locale.getDefault()), e);
-        }
     }
 
     @Async
@@ -459,5 +229,190 @@ public class UserService {
             log.error("Falha ao listar permissões do Auth0", e);
             throw new RuntimeException(messageSource.getMessage("error.auth0.permissions.failed", new Object[]{e.getMessage()}, Locale.getDefault()), e);
         }
+    }
+
+    /* ==== HELPERS ==== */
+
+    private AppUser updateUserInternal(String userId, UserUpdateDTO dto) {
+        if (userId == null || userId.trim().isEmpty() || !userId.matches("^(auth0|google-oauth2)\\|.+")) {
+            log.error("Formato de ID de usuário inválido: {}", userId);
+            throw new IllegalArgumentException(messageSource.getMessage("error.invalid.user.id", new Object[]{userId}, Locale.getDefault()));
+        }
+
+        AppUser appUser = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
+
+        boolean isGoogleUser = userId.startsWith("google-oauth2|");
+        if (isGoogleUser) {
+            String existingName = appUser.getName() != null ? appUser.getName().trim() : "";
+            String existingEmail = appUser.getEmail() != null ? appUser.getEmail().trim() : "";
+            String newName = dto.getName() != null ? dto.getName().trim() : "";
+            String newEmail = dto.getEmail() != null ? dto.getEmail().trim() : "";
+
+            if ((!newName.isEmpty() && !newName.equals(existingName)) || (!newEmail.isEmpty() && !newEmail.equals(existingEmail))) {
+                log.warn("Tentativa de alterar nome ou email para usuário Google OAuth2 com ID: {}", userId);
+                throw new GoogleOAuth2UpdateNotAllowedException(userId);
+            }
+        }
+
+        // Campos básicos
+        if (dto.getName() != null && !dto.getName().trim().isEmpty()) appUser.setName(dto.getName().trim());
+        if (dto.getEmail() != null && !dto.getEmail().trim().isEmpty()) appUser.setEmail(dto.getEmail().trim());
+        if (dto.getType() != null) appUser.setType(dto.getType());
+        if (dto.getDetails() != null) appUser.setDetails(dto.getDetails());
+        if (dto.getRoles() != null) appUser.setRoles(dto.getRoles());
+        if (dto.getPermissions() != null) appUser.setPermissions(dto.getPermissions());
+        if (dto.getPhone() != null) appUser.setPhone(dto.getPhone());
+        if (dto.getSecondaryPhone() != null) appUser.setSecondaryPhone(dto.getSecondaryPhone());
+        if (dto.getStatus() != null) appUser.setStatus(dto.getStatus());
+
+        // Endereço (agora via objeto address)
+        AddressDTO a = dto.getAddress();
+        if (a != null) {
+            Address address = appUser.getAddress() != null ? appUser.getAddress() : new Address();
+            address.setZipCode(a.getZipCode());
+            address.setState(a.getState());
+            address.setCity(a.getCity());
+            address.setNeighborhood(a.getNeighborhood());
+            address.setStreet(a.getStreet());
+            address.setNumber(a.getNumber());
+            address.setComplement(a.getComplement());
+            address.setUser(appUser);
+            appUser.setAddress(address);
+        }
+        log.info("Salvando AppUser com endereço: {}", appUser.getAddress());
+        userRepository.save(appUser);
+
+        // Atualiza no Auth0
+        User auth0User = new User();
+        Map<String, Object> appMetadata = new HashMap<>();
+
+        if (!isGoogleUser) {
+            if (dto.getName() != null && !dto.getName().trim().isEmpty()) auth0User.setName(dto.getName().trim());
+            if (dto.getEmail() != null && !dto.getEmail().trim().isEmpty()) auth0User.setEmail(dto.getEmail().trim());
+        }
+
+        if (dto.getType() != null) appMetadata.put("type", dto.getType().getCode());
+        if (dto.getDetails() != null) appMetadata.put("details", dto.getDetails());
+        if (dto.getPhone() != null) appMetadata.put("phone", dto.getPhone());
+        if (dto.getSecondaryPhone() != null) appMetadata.put("secondaryPhone", dto.getSecondaryPhone());
+        if (dto.getStatus() != null) appMetadata.put("status", dto.getStatus().getCode());
+        if (a != null) {
+            appMetadata.put("address", Map.of(
+                    "zipCode", a.getZipCode() != null ? a.getZipCode() : "",
+                    "state", a.getState() != null ? a.getState() : "",
+                    "city", a.getCity() != null ? a.getCity() : "",
+                    "neighborhood", a.getNeighborhood() != null ? a.getNeighborhood() : "",
+                    "street", a.getStreet() != null ? a.getStreet() : "",
+                    "number", a.getNumber() != null ? a.getNumber() : "",
+                    "complement", a.getComplement() != null ? a.getComplement() : ""
+            ));
+        }
+        auth0User.setAppMetadata(appMetadata);
+
+        try {
+            log.info("Editando na AWS o usuário {} ", userId);
+            managementAPI.users().update(userId, auth0User).execute();
+
+            // Atualiza roles se enviadas
+            if (dto.getRoles() != null) {
+                List<Role> allRoles = managementAPI.roles().list(new RolesFilter()).execute().getBody().getItems();
+                List<String> roleIds = allRoles.stream()
+                        .filter(role -> dto.getRoles().contains(role.getName()))
+                        .map(Role::getId)
+                        .collect(Collectors.toList());
+
+                // Remove todas as atuais e adiciona as novas (se houver)
+                var currentRoles = managementAPI.users().listRoles(userId, null).execute().getBody().getItems();
+                if (!currentRoles.isEmpty()) {
+                    managementAPI.users().removeRoles(
+                            userId,
+                            currentRoles.stream().map(Role::getId).collect(Collectors.toList())
+                    ).execute();
+                }
+                if (!roleIds.isEmpty()) {
+                    managementAPI.users().addRoles(userId, roleIds).execute();
+                }
+            }
+
+            // Recarrega do Auth0 para garantir consistência
+            syncUserFromAuth0(userId);
+        } catch (Auth0Exception e) {
+            log.error("Falha ao atualizar usuário no Auth0 com ID: {}", userId, e);
+            e.printStackTrace();
+            throw new RuntimeException(messageSource.getMessage("error.auth0.update.failed", new Object[]{e.getMessage()}, Locale.getDefault()), e);
+        }
+
+        return appUser;
+    }
+
+    private AppUser convertAuth0User(com.auth0.json.mgmt.users.User auth0User) {
+        AppUser appUser = new AppUser();
+        appUser.setId(auth0User.getId());
+        appUser.setEmail(auth0User.getEmail() != null ? auth0User.getEmail() : "");
+        appUser.setName(auth0User.getName());
+        appUser.setStatus(UserStatus.ATIVO);
+
+        try {
+            List<Role> roles = managementAPI.users().listRoles(auth0User.getId(), null).execute().getBody().getItems();
+            appUser.setRoles(roles.stream().map(Role::getName).collect(Collectors.toList()));
+
+            Set<String> permissions = new HashSet<>();
+            for (Role role : roles) {
+                List<Permission> permissionItems = managementAPI.roles().listPermissions(role.getId(), null)
+                        .execute().getBody().getItems();
+                permissions.addAll(permissionItems.stream()
+                        .map(Permission::getName)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toList()));
+            }
+            appUser.setPermissions(new ArrayList<>(permissions));
+        } catch (Auth0Exception e) {
+            log.error("Falha ao buscar roles ou permissões para usuário: {}", auth0User.getId(), e);
+        }
+
+        if (auth0User.getAppMetadata() != null) {
+            Object type = auth0User.getAppMetadata().get("type");
+            Object details = auth0User.getAppMetadata().get("details");
+            Object phone = auth0User.getAppMetadata().get("phone");
+            Object secondaryPhone = auth0User.getAppMetadata().get("secondaryPhone");
+            Object status = auth0User.getAppMetadata().get("status");
+            Object addressObj = auth0User.getAppMetadata().get("address");
+
+            if (type != null) {
+                try { appUser.setType(UserType.fromCode(type.toString())); }
+                catch (IllegalArgumentException e) { log.warn("Tipo de usuário inválido: {}", type); }
+            }
+            if (details != null) {
+                try { appUser.setDetails(objectMapper.convertValue(details, UserDetails.class)); }
+                catch (Exception e) { log.warn("Falha ao desserializar details: {}", details, e); }
+            }
+            if (phone != null) appUser.setPhone(phone.toString());
+            if (secondaryPhone != null) appUser.setSecondaryPhone(secondaryPhone.toString());
+            if (status != null) {
+                try { appUser.setStatus(UserStatus.fromCode(status.toString())); }
+                catch (IllegalArgumentException e) { log.warn("Status de usuário inválido: {}", status); }
+            }
+            if (addressObj != null) {
+                try {
+                    Map<String, String> addressMap = objectMapper.convertValue(addressObj, Map.class);
+                    Address address = new Address();
+                    address.setZipCode(addressMap.getOrDefault("zipCode", ""));
+                    address.setState(addressMap.getOrDefault("state", ""));
+                    address.setCity(addressMap.getOrDefault("city", ""));
+                    address.setNeighborhood(addressMap.getOrDefault("neighborhood", ""));
+                    address.setStreet(addressMap.getOrDefault("street", ""));
+                    address.setNumber(addressMap.getOrDefault("number", ""));
+                    address.setComplement(addressMap.getOrDefault("complement", ""));
+                    address.setUser(appUser);
+                    appUser.setAddress(address);
+                    log.info("Endereço recuperado do Auth0 para usuário {}: {}", auth0User.getId(), address);
+                } catch (Exception e) {
+                    log.warn("Falha ao desserializar endereço: {}", addressObj, e);
+                }
+            }
+        }
+
+        return appUser;
     }
 }

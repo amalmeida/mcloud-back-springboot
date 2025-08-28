@@ -22,55 +22,51 @@ import java.util.List;
 public class SecurityConfig {
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http, Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter) throws Exception {
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter) throws Exception {
+
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/api-docs/**").permitAll()
+                        .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers("/api/users/**").permitAll()
+                        // TUDO abaixo exige JWT
+                        .requestMatchers("/api/**").authenticated()
                         .anyRequest().authenticated()
+                )
+                .oauth2ResourceServer(oauth2 -> oauth2
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter))
                 );
-        // Reative quando quiser JWT:
-        // .oauth2ResourceServer(oauth2 -> oauth2
-        //     .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter))
-        // );
 
         return http.build();
     }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-
-        // IMPORTANTE:
-        // - Como allowCredentials(true) está habilitado, NÃO podemos usar "*".
-        // - Precisamos listar exatamente as origens que podem chamar a API.
-        configuration.setAllowedOrigins(List.of(
-                "https://d2b1wg3xl82uam.cloudfront.net", // produção via CloudFront (HTTPS)
-                "http://localhost:5173",                // dev (vite dev server)
-                "http://localhost:4173"                 // opcional: vite preview
+        CorsConfiguration c = new CorsConfiguration();
+        c.setAllowedOrigins(List.of(
+                "https://d2b1wg3xl82uam.cloudfront.net",
+                "http://localhost:5173",
+                "http://localhost:4173"
         ));
-
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Origin"));
-        configuration.setAllowCredentials(true);
-        // Se precisar ler headers de resposta específicos no front, exponha aqui:
-        // configuration.setExposedHeaders(List.of("Authorization"));
-
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
-        return source;
+        c.setAllowedMethods(List.of("GET","POST","PUT","DELETE","OPTIONS","PATCH"));
+        c.setAllowedHeaders(List.of("Authorization","Content-Type","Accept","Origin"));
+        c.setAllowCredentials(true);
+        UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
+        src.registerCorsConfiguration("/**", c);
+        return src;
     }
 
     @Bean
     public Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter(RoleConverter roleConverter) {
-        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
-        converter.setJwtGrantedAuthoritiesConverter(roleConverter);
-        return converter;
+        JwtAuthenticationConverter c = new JwtAuthenticationConverter();
+        c.setJwtGrantedAuthoritiesConverter(roleConverter);
+        return c;
     }
 
     @Bean

@@ -47,7 +47,12 @@ cd mcloud-back-springboot
 
 2. **Suba os containers:**
 ```bash
-docker-compose up --build
+docker-compose up --build -d (força reconstrução da imagem)
+ou
+docker-compose up -d
+
+
+
 ```
 
 A aplicação estará acessível em `http://localhost:8080`.
